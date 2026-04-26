@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     $('.metadata-item').each((_, el) => {
       const label = $(el).find('.metadata-label').text().trim().replace(':', '').toLowerCase();
       const value = $(el).find('.metadata-value').text().trim();
-      
+
       if (label && value) {
         metadata[label as keyof Metadata] = value;
       }
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
       const $item = $(el);
       const header = $item.find('.download-header');
       const titleText = header.find('.flex-1').contents().first().text().trim();
-      
+
       // Extract size, languages, quality from badges in header
       const size = header.find('.badge').first().text().trim();
       const languages = header.find('.badge').eq(1).text().trim();
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
       $item.find('.grid.grid-cols-2 a').each((_, linkEl) => {
         const server = $(linkEl).find('span').first().text().trim().replace('Download ', '').replace(/\s+/g, ' ');
         const href = $(linkEl).attr('href') || '';
-        
+
         if (href && server) {
           links.push({
             server,
@@ -158,7 +158,7 @@ export async function GET(request: NextRequest) {
       const relTitle = $card.find('.movie-card-title').text().trim();
       const imageUrl = $card.find('.movie-card-image img').attr('src') || '';
       const meta = $card.find('.movie-card-meta').text().trim();
-      
+
       const metaParts = meta.split('•').map(s => s.trim());
       const year = metaParts[0] || '';
       const season = metaParts[1] || undefined;
@@ -200,9 +200,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error in 4kHDHub details API:", error);
     return NextResponse.json(
-      { 
-        error: "Internal server error", 
-        message: error instanceof Error ? error.message : "Unknown error" 
+      {
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error"
       },
       { status: 500 }
     );

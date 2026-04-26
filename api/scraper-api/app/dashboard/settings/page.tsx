@@ -70,7 +70,7 @@ export default function SettingsPage() {
       setShowAdultConfirm(true);
       return;
     }
-    
+
     setEnabledProviders((prev) =>
       prev.includes(provider)
         ? prev.filter((p) => p !== provider)
@@ -90,12 +90,12 @@ export default function SettingsPage() {
       const res = await fetch("/api/providers/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           enabledProviders,
-          adultConsent: hasAdult 
+          adultConsent: hasAdult
         }),
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         setEnabledProviders(data.enabledProviders);
@@ -121,11 +121,10 @@ export default function SettingsPage() {
       {!loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {ALL_PROVIDERS.map((provider) => (
-            <div 
-              key={provider} 
-              className={`flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors ${
-                provider === "Adult" ? "border-red-500/50" : ""
-              }`}
+            <div
+              key={provider}
+              className={`flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors ${provider === "Adult" ? "border-red-500/50" : ""
+                }`}
             >
               <div className="flex-1">
                 <Label className="cursor-pointer font-medium flex items-center gap-2">
@@ -153,7 +152,7 @@ export default function SettingsPage() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <Link 
+          <Link
             href="https://github.com/Anshu78780/ScarperApi"
             target="_blank"
             rel="noopener noreferrer"
@@ -187,7 +186,7 @@ export default function SettingsPage() {
               {enabledProviders.length} of {ALL_PROVIDERS.length} providers enabled
             </p>
           </div>
-          <Button 
+          <Button
             onClick={() => setShowProviderManagement(true)}
             variant="outline"
             className="gap-2"
@@ -289,8 +288,8 @@ export default function SettingsPage() {
               {providersList}
             </div>
             <DialogFooter>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setShowProviderManagement(false)}
               >
                 Cancel
