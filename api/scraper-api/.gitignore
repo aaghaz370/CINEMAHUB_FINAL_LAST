@@ -1,0 +1,24 @@
+node_modules
+.next
+.env
+drizzle */migrations
+
+# YouTube API routes
+app/api/youtubes
+
+# Tera API routes
+app/api/tera
+
+# TheMovie all route
+app/api/themovie/all
+
+# NX API routes
+app/api/nx
+
+# Eporner API routes
+app/api/adult/eporner
+
+# Email service and email list
+lib/email-service.ts
+emails.txt
+scripts/send-test-emails.ts

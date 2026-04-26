@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+</head>
+<body>
+  <video id="video" controls autoplay width="800"></video>
+  <script>
+    const url = "http://localhost:9090/api/netmirror?action=proxy&url=https%3A%2F%2Fnet52.cc%2Fhls%2F82006666.m3u8%3Fin%3D144c9defac04969c7bfad8efaa8ea194%3A%3A5f949446635c8a784d110dfa036c71ab%3A%3A1776773663%3A%3Ani";
+    const video = document.getElementById('video');
+    if (Hls.isSupported()) {
+      const hls = new Hls({ debug: true });
+      hls.loadSource(url);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function() {
+        video.play();
+      });
+      hls.on(Hls.Events.ERROR, function(event, data) {
+        console.error("HLS Error:", data);
+      });
+      // Monitor audio tracks
+      hls.on(Hls.Events.AUDIO_TRACK_LOADED, function(event, data) {
+        console.log("Audio tracks loaded:", hls.audioTracks);
+      });
+    }
+  </script>
+</body>
+</html>
