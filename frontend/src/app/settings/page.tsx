@@ -2,7 +2,8 @@
 
 import { ThemeSelector } from '@/components/theme-selector';
 import { useAppTheme } from '@/components/theme-provider';
-import { ShieldCheck, Monitor } from 'lucide-react';
+import { ShieldCheck, Monitor, Globe } from 'lucide-react';
+import { LanguageSelector } from '@/components/language-selector';
 
 export default function SettingsPage() {
   const { mode } = useAppTheme();
@@ -28,6 +29,16 @@ export default function SettingsPage() {
         </div>
         <div className="p-6 rounded-3xl glass" style={{ border: '1px solid var(--border)' }}>
           <ThemeSelector />
+        </div>
+      </section>
+
+      <section className="space-y-5 pt-4">
+        <div className="flex items-center gap-3">
+          <Globe style={{ color: 'var(--accent)' }} size={22} />
+          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Language & Region</h2>
+        </div>
+        <div className="p-6 rounded-3xl glass" style={{ border: '1px solid var(--border)' }}>
+          <LanguageSelector />
         </div>
       </section>
 

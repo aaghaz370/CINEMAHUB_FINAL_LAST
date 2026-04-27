@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Play, TrendingUp, Sparkles, Star } from 'lucide-react';
-import { ThemeSelector } from '@/components/theme-selector';
 
 import { useEffect, useState } from 'react';
 
@@ -167,18 +166,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── THEME CUSTOMIZER ── */}
-      <section className="space-y-5">
-        <h2 className="text-2xl font-black tracking-tighter" style={{ color: 'var(--text-primary)' }}>
-          🎨 Appearance
-        </h2>
-        <div
-          className="p-6 rounded-3xl glass"
-          style={{ border: '1px solid var(--border)' }}
-        >
-          <ThemeSelector />
-        </div>
-      </section>
+      {/* ── TRENDING ── */}
 
     </div>
   );

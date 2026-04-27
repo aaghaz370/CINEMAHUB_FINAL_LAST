@@ -55,12 +55,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const setTheme = (t: ThemeId) => {
     setThemeState(t);
+    themeRef.current = t;
     localStorage.setItem('ch-theme', t);
     applyToDom(t, modeRef.current);
   };
 
   const setMode = (m: Mode) => {
     setModeState(m);
+    modeRef.current = m;
     localStorage.setItem('ch-mode', m);
     applyToDom(themeRef.current, m);
   };

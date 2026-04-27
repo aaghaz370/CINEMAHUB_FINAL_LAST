@@ -1,18 +1,18 @@
 'use client';
 
 import { useAppTheme, ThemeId } from './theme-provider';
-import { Check } from 'lucide-react';
+import { Check, Snowflake, Sparkles, Leaf, MoonStar, Gamepad2, Trees } from 'lucide-react';
 
 const lightThemes = [
-  { id: 'soft-frost' as ThemeId, name: 'Soft Frost', emoji: '❄️', desc: 'Airy glassmorphic blues', gradient: 'from-blue-100 to-indigo-200' },
-  { id: 'champagne-gold' as ThemeId, name: 'Champagne Gold', emoji: '✨', desc: 'Luxury warm cream tones', gradient: 'from-amber-100 to-yellow-200' },
-  { id: 'arctic-mint' as ThemeId, name: 'Arctic Mint', emoji: '🌿', desc: 'Fresh emerald clarity', gradient: 'from-emerald-100 to-teal-200' },
+  { id: 'soft-frost' as ThemeId, name: 'Soft Frost', Icon: Snowflake, desc: 'Airy glassmorphic blues', gradient: 'from-blue-100 to-indigo-200' },
+  { id: 'champagne-gold' as ThemeId, name: 'Champagne Gold', Icon: Sparkles, desc: 'Luxury warm cream tones', gradient: 'from-amber-100 to-yellow-200' },
+  { id: 'arctic-mint' as ThemeId, name: 'Arctic Mint', Icon: Leaf, desc: 'Fresh emerald clarity', gradient: 'from-emerald-100 to-teal-200' },
 ];
 
 const darkThemes = [
-  { id: 'midnight-indigo' as ThemeId, name: 'Midnight Indigo', emoji: '🌌', desc: 'Deep sky, cinema feel', gradient: 'from-indigo-950 to-slate-950' },
-  { id: 'cyber-rose' as ThemeId, name: 'Cyber Rose', emoji: '🌸', desc: 'Neon pink, gaming vibe', gradient: 'from-pink-950 to-fuchsia-950' },
-  { id: 'forest-stealth' as ThemeId, name: 'Forest Stealth', emoji: '🌲', desc: 'Dark emerald luxury', gradient: 'from-emerald-950 to-gray-950' },
+  { id: 'midnight-indigo' as ThemeId, name: 'Midnight Indigo', Icon: MoonStar, desc: 'Deep sky, cinema feel', gradient: 'from-indigo-950 to-slate-950' },
+  { id: 'cyber-rose' as ThemeId, name: 'Cyber Rose', Icon: Gamepad2, desc: 'Neon pink, gaming vibe', gradient: 'from-pink-950 to-fuchsia-950' },
+  { id: 'forest-stealth' as ThemeId, name: 'Forest Stealth', Icon: Trees, desc: 'Dark emerald luxury', gradient: 'from-emerald-950 to-gray-950' },
 ];
 
 export function ThemeSelector() {
@@ -26,7 +26,7 @@ export function ThemeSelector() {
           <button
             key={m}
             onClick={() => setMode(m)}
-            className="flex-1 py-3 rounded-xl font-bold text-sm transition-all duration-300 capitalize"
+            className="flex-1 py-3 rounded-xl font-bold text-sm transition-all duration-300 capitalize flex items-center justify-center gap-2"
             style={mode === m ? {
               background: 'var(--accent)',
               color: '#fff',
@@ -35,15 +35,16 @@ export function ThemeSelector() {
               color: 'var(--text-secondary)',
             }}
           >
-            {m === 'light' ? '☀️ ' : '🌙 '}{m.charAt(0).toUpperCase() + m.slice(1)}
+            {m === 'light' ? <Sparkles size={16} /> : <MoonStar size={16} />}
+            {m.charAt(0).toUpperCase() + m.slice(1)}
           </button>
         ))}
       </div>
 
       {/* Light Themes */}
       <div>
-        <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: 'var(--text-secondary)' }}>
-          ☀️ Day Mode Themes
+        <p className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+          <Sparkles size={14} /> Day Mode Themes
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {lightThemes.map((t) => (
@@ -54,8 +55,8 @@ export function ThemeSelector() {
 
       {/* Dark Themes */}
       <div>
-        <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: 'var(--text-secondary)' }}>
-          🌙 Night Mode Themes
+        <p className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+          <MoonStar size={14} /> Night Mode Themes
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {darkThemes.map((t) => (
@@ -67,14 +68,16 @@ export function ThemeSelector() {
   );
 }
 
-function ThemeCard({ id, name, emoji, desc, gradient, isActive, onClick }: any) {
+function ThemeCard({ id, name, Icon, desc, gradient, isActive, onClick }: any) {
   return (
     <button
       onClick={onClick}
       className={`relative flex flex-col items-start p-4 rounded-2xl border-2 transition-all duration-300 text-left hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-br ${gradient}`}
       style={{ borderColor: isActive ? 'var(--accent)' : 'transparent' }}
     >
-      <div className="text-2xl mb-3">{emoji}</div>
+      <div className="mb-3 p-2 rounded-xl" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
+        <Icon size={20} />
+      </div>
       <p className="font-bold text-sm text-gray-900 dark:text-gray-100">{name}</p>
       <p className="text-xs text-gray-500 mt-1">{desc}</p>
       {isActive && (
