@@ -131,7 +131,7 @@ export default function DetailPage() {
             </div>
             {selectedLink.format === 'mp4' ? (
               <video
-                src={`/api/proxy?url=${encodeURIComponent(selectedLink.url)}`}
+                src={selectedLink.url}
                 controls
                 autoPlay
                 className="w-full rounded-2xl"
@@ -140,7 +140,7 @@ export default function DetailPage() {
                 Your browser does not support video.
               </video>
             ) : selectedLink.format === 'm3u8' ? (
-              <HlsPlayer url={`/api/proxy?url=${encodeURIComponent(selectedLink.url)}`} />
+              <HlsPlayer url={selectedLink.url} proxiedUrl={`/api/proxy?url=${encodeURIComponent(selectedLink.url)}`} />
             ) : (
               <div className="w-full rounded-2xl p-8 text-center" style={{ background: '#111' }}>
                 <p className="text-white mb-4">This link requires external processing.</p>
@@ -317,23 +317,25 @@ export default function DetailPage() {
 }
 
 // ── HLS Player Component ──
-function HlsPlayer({ url }: { url: string }) {
+function HlsPlayer({ url, proxiedUrl }: { url: string, proxiedUrl?: string }) {
+  const streamUrl = proxiedUrl || url;
+  
   useEffect(() => {
     const video = document.getElementById('hls-video') as HTMLVideoElement;
     if (!video) return;
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = url;
+      video.src = streamUrl;
     } else {
       import('hls.js').then(({ default: Hls }) => {
         if (Hls.isSupported()) {
           const hls = new Hls();
-          hls.loadSource(url);
+          hls.loadSource(streamUrl);
           hls.attachMedia(video);
           return () => hls.destroy();
         }
       });
     }
-  }, [url]);
+  }, [streamUrl]);
 
   return (
     <video id="hls-video" controls autoPlay className="w-full rounded-2xl" style={{ maxHeight: '75vh', background: '#000' }}>
