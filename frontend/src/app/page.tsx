@@ -42,27 +42,27 @@ export default function Home() {
         const res = await fetch('/api/home');
         const json = await res.json();
 
-        // The backend returns { success: true, data: { sections: [...] } }
-        // Each section: { title: string, items: MediaItem[] }
         let allItems: MediaItem[] = [];
 
         if (json?.data?.sections && Array.isArray(json.data.sections)) {
           // Build rows from sections
           const rows = json.data.sections
-            .filter((s: any) => s.items && s.items.length > 0)
+            .filter((s: any) => s?.items && s.items.length > 0)
             .map((s: any) => ({ title: s.title || 'Featured', items: s.items }));
           setSections(rows);
-          // Collect all items for hero
-          allItems = rows.flatMap((r: any) => r.items);
-        } else if (json?.results) {
-          // Fallback: flat results array
-          allItems = json.results;
-          setSections([{ title: t('trending_now'), items: json.results }]);
+
+          // Use explicit trending if available, else flatten all items
+          if (json.data.trending && json.data.trending.length > 0) {
+            allItems = json.data.trending;
+          } else {
+            allItems = rows.flatMap((r: any) => r.items);
+          }
         }
 
         // Pick top 5 with backdrops for hero carousel
         const withBackdrops = allItems.filter((m) => getBackdrop(m));
         setHeroItems(withBackdrops.slice(0, 5));
+        
       } catch (err) {
         console.error('Failed to load home data', err);
       } finally {
