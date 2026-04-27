@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Play, Plus, Info, Star, ChevronRight, Sparkles } from 'lucide-react';
+import { Play, Plus, Info, Star, ChevronRight, Sparkles, TrendingUp } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 
 // Interfaces based on API response
