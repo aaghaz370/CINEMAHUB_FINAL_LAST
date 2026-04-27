@@ -1,103 +1,114 @@
 import { NextResponse } from 'next/server';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
 const TMDB_KEY = process.env.TMDB_API_KEY;
+const TMDB = 'https://api.themoviedb.org/3';
+const IMG = 'https://image.tmdb.org/t/p';
 
-async function fetchTmdbTrending() {
-  if (!TMDB_KEY) return null;
-  try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3/trending/all/week?api_key=${TMDB_KEY}`,
-      { next: { revalidate: 3600 } }
-    );
-    const data = await res.json();
-    const items = (data.results || []).slice(0, 20).map((m: any) => ({
-      tmdb_id: m.id,
-      title: m.title || m.name,
-      type: m.media_type,
-      overview: m.overview,
-      vote_average: m.vote_average,
-      release_date: m.release_date || m.first_air_date,
-      poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
-      backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : null,
-    }));
-    return items;
-  } catch {
-    return null;
-  }
+function mapTmdb(m: any, type?: string): any {
+  const mediaType = type || m.media_type || 'movie';
+  return {
+    tmdb_id: m.id,
+    title: m.title || m.name,
+    type: mediaType,
+    overview: m.overview || '',
+    vote_average: m.vote_average || 0,
+    release_date: m.release_date || m.first_air_date || '',
+    poster: m.poster_path ? `${IMG}/w500${m.poster_path}` : null,
+    backdrop: m.backdrop_path ? `${IMG}/w1280${m.backdrop_path}` : null,
+  };
 }
 
-async function fetchTmdbCategory(path: string, label: string) {
-  if (!TMDB_KEY) return null;
+async function tmdbFetch(path: string) {
+  if (!TMDB_KEY) return [];
   try {
-    const res = await fetch(
-      `https://api.themoviedb.org/3${path}?api_key=${TMDB_KEY}`,
-      { next: { revalidate: 3600 } }
-    );
+    const res = await fetch(`${TMDB}${path}&api_key=${TMDB_KEY}`, {
+      next: { revalidate: 1800 },
+    });
+    if (!res.ok) return [];
     const data = await res.json();
-    const items = (data.results || []).slice(0, 15).map((m: any) => ({
-      tmdb_id: m.id,
-      title: m.title || m.name,
-      type: m.title ? 'movie' : 'tv',
-      overview: m.overview,
-      vote_average: m.vote_average,
-      release_date: m.release_date || m.first_air_date,
-      poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
-      backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : null,
-    }));
-    return { title: label, items };
+    return data.results || [];
   } catch {
-    return null;
+    return [];
   }
 }
 
 export async function GET() {
-  // 1. Try to get data from our backend aggregator
-  try {
-    const res = await fetch(`${API_BASE}/api/aggregator/home`, {
-      next: { revalidate: 300 },
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      // Check if aggregator returned actual content
-      const hasContent = data?.data?.sections?.some(
-        (s: any) => s.items && s.items.length > 0
-      );
-      if (hasContent) {
-        return NextResponse.json(data);
-      }
-    }
-  } catch {
-    // Aggregator unavailable — fall through to TMDB
+  if (!TMDB_KEY) {
+    return NextResponse.json(
+      { success: false, error: 'TMDB_API_KEY not configured' },
+      { status: 500 }
+    );
   }
 
-  // 2. Fallback: Build sections directly from TMDB API
-  const [trending, popular_movies, top_rated_movies, popular_tv, top_rated_tv, upcoming] =
-    await Promise.all([
-      fetchTmdbTrending(),
-      fetchTmdbCategory('/movie/popular', 'Popular Movies'),
-      fetchTmdbCategory('/movie/top_rated', 'Top Rated Movies'),
-      fetchTmdbCategory('/tv/popular', 'Popular Series'),
-      fetchTmdbCategory('/tv/top_rated', 'Top Rated Series'),
-      fetchTmdbCategory('/movie/upcoming', 'Coming Soon'),
-    ]);
+  // Fetch all categories in parallel from TMDB
+  const [
+    trending,
+    popularMovies,
+    topMovies,
+    upcoming,
+    popularTv,
+    topTv,
+    actionMovies,
+    romanceMovies,
+  ] = await Promise.all([
+    tmdbFetch('/trending/all/week?'),
+    tmdbFetch('/movie/popular?'),
+    tmdbFetch('/movie/top_rated?'),
+    tmdbFetch('/movie/upcoming?'),
+    tmdbFetch('/tv/popular?'),
+    tmdbFetch('/tv/top_rated?'),
+    tmdbFetch('/discover/movie?with_genres=28&sort_by=popularity.desc&'),
+    tmdbFetch('/discover/movie?with_genres=10749&sort_by=popularity.desc&'),
+  ]);
 
   const sections = [
-    popular_movies,
-    top_rated_movies,
-    popular_tv,
-    top_rated_tv,
-    upcoming,
-  ].filter(Boolean);
+    {
+      title: '🔥 Trending Now',
+      items: trending.slice(0, 20).map((m: any) => mapTmdb(m)),
+    },
+    {
+      title: '🎬 Popular Movies',
+      items: popularMovies.slice(0, 15).map((m: any) => mapTmdb(m, 'movie')),
+    },
+    {
+      title: '⭐ Top Rated Movies',
+      items: topMovies.slice(0, 15).map((m: any) => mapTmdb(m, 'movie')),
+    },
+    {
+      title: '📺 Popular Series',
+      items: popularTv.slice(0, 15).map((m: any) => mapTmdb(m, 'tv')),
+    },
+    {
+      title: '🏆 Top 10 Series',
+      items: topTv.slice(0, 10).map((m: any) => mapTmdb(m, 'tv')),
+    },
+    {
+      title: '🚀 Coming Soon',
+      items: upcoming.slice(0, 15).map((m: any) => mapTmdb(m, 'movie')),
+    },
+    {
+      title: '💥 Action & Adventure',
+      items: actionMovies.slice(0, 15).map((m: any) => mapTmdb(m, 'movie')),
+    },
+    {
+      title: '💕 Romance',
+      items: romanceMovies.slice(0, 15).map((m: any) => mapTmdb(m, 'movie')),
+    },
+  ].filter((s) => s.items.length > 0);
+
+  // Hero items = trending items WITH backdrops
+  const heroItems = trending
+    .filter((m: any) => m.backdrop_path)
+    .slice(0, 5)
+    .map((m: any) => mapTmdb(m));
 
   return NextResponse.json({
     success: true,
-    source: 'tmdb_fallback',
+    source: 'tmdb',
     data: {
       totalSections: sections.length,
       sections,
-      trending: trending || [],
+      trending: heroItems,
     },
   });
 }

@@ -1,8 +1,5 @@
 import type { NextConfig } from "next";
 
-// Internal API routes handled by Next.js itself (not proxied)
-const INTERNAL_API_PATHS = ['/api/home', '/api/trending', '/api/search'];
-
 const nextConfig: NextConfig = {
   reactCompiler: true,
   allowedDevOrigins: [
@@ -11,15 +8,16 @@ const nextConfig: NextConfig = {
     '192.168.1.1',
   ],
   async rewrites() {
-    // Only proxy to local aggregator during development
+    // In production there's no local aggregator — skip entirely
     if (process.env.NODE_ENV !== 'development') {
       return [];
     }
+    // In dev: proxy to local aggregator BUT exclude our own Next.js API routes
+    // Regex: match /api/* EXCEPT /api/home, /api/trending, /api/search
     return [
       {
-        source: '/api/:path*',
+        source: '/api/:path((?!home|trending|search|media).*)',
         destination: 'http://127.0.0.1:9091/api/:path*',
-        // In dev we still need to skip our own Next.js API routes
       }
     ];
   }
