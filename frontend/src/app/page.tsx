@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, TrendingUp, Sparkles, Star } from 'lucide-react';
-
-import { useEffect, useState } from 'react';
+import { useLanguage } from '@/lib/i18n';
 
 // Interfaces based on API response
 interface TrendingItem {
@@ -21,6 +20,7 @@ export default function Home() {
   const [trending, setTrending] = useState<TrendingItem[]>([]);
   const [heroMovie, setHeroMovie] = useState<TrendingItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
 
   useEffect(() => {
     async function loadData() {
@@ -76,7 +76,7 @@ export default function Home() {
           <div className="absolute bottom-0 left-0 p-8 md:p-12 space-y-4 max-w-2xl">
             <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-[0.25em]" style={{ color: 'var(--accent)' }}>
               <Sparkles size={13} />
-              #1 Trending
+              #1 {t('trending_now')}
             </div>
             <h1 className="text-4xl md:text-6xl font-black tracking-tighter leading-tight text-white drop-shadow-md">
               {heroMovie.title}
@@ -99,13 +99,13 @@ export default function Home() {
               style={{ background: 'var(--accent)', boxShadow: '0 4px 20px var(--accent-glow)' }}
             >
               <Play size={16} fill="white" />
-              Watch Now
+              {t('watch_now')}
             </button>
             <button
               className="px-6 py-3 rounded-2xl font-bold transition-all hover:scale-105"
               style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(8px)' }}
             >
-              + My List
+              {t('my_list')}
             </button>
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <TrendingUp size={21} style={{ color: 'var(--accent)' }} />
           <h2 className="text-2xl font-black tracking-tighter" style={{ color: 'var(--text-primary)' }}>
-            Trending Now
+            {t('trending_now')}
           </h2>
         </div>
 

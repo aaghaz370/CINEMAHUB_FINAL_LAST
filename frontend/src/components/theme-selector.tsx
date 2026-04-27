@@ -1,6 +1,7 @@
 'use client';
 
 import { useAppTheme, ThemeId } from './theme-provider';
+import { useLanguage } from '@/lib/i18n';
 import { Check, Snowflake, Sparkles, Leaf, MoonStar, Gamepad2, Trees } from 'lucide-react';
 
 const lightThemes = [
@@ -17,6 +18,7 @@ const darkThemes = [
 
 export function ThemeSelector() {
   const { theme, mode, setTheme, setMode } = useAppTheme();
+  const { t } = useLanguage();
 
   return (
     <div className="space-y-8">
@@ -36,7 +38,7 @@ export function ThemeSelector() {
             }}
           >
             {m === 'light' ? <Sparkles size={16} /> : <MoonStar size={16} />}
-            {m.charAt(0).toUpperCase() + m.slice(1)}
+            {m === 'light' ? t('day_mode') : t('night_mode')}
           </button>
         ))}
       </div>
@@ -44,11 +46,11 @@ export function ThemeSelector() {
       {/* Light Themes */}
       <div>
         <p className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-          <Sparkles size={14} /> Day Mode Themes
+          <Sparkles size={14} /> {t('day_themes')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {lightThemes.map((t) => (
-            <ThemeCard key={t.id} {...t} isActive={theme === t.id} onClick={() => { setTheme(t.id); setMode('light'); }} />
+          {lightThemes.map((tItem) => (
+            <ThemeCard key={tItem.id} {...tItem} isActive={theme === tItem.id} onClick={() => { setTheme(tItem.id); setMode('light'); }} />
           ))}
         </div>
       </div>
@@ -56,11 +58,11 @@ export function ThemeSelector() {
       {/* Dark Themes */}
       <div>
         <p className="text-xs font-bold uppercase tracking-widest mb-4 flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-          <MoonStar size={14} /> Night Mode Themes
+          <MoonStar size={14} /> {t('night_themes')}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {darkThemes.map((t) => (
-            <ThemeCard key={t.id} {...t} isActive={theme === t.id} onClick={() => { setTheme(t.id); setMode('dark'); }} />
+          {darkThemes.map((tItem) => (
+            <ThemeCard key={tItem.id} {...tItem} isActive={theme === tItem.id} onClick={() => { setTheme(tItem.id); setMode('dark'); }} />
           ))}
         </div>
       </div>

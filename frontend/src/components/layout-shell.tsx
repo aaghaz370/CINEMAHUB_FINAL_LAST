@@ -4,19 +4,21 @@ import React, { useState } from 'react';
 import { Home, Search, Film, Tv, PlayCircle, Settings, Menu, X, MonitorPlay } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useLanguage } from '@/lib/i18n';
 
 const navigation = [
-  { name: 'Home', href: '/', icon: Home },
-  { name: 'Search', href: '/search', icon: Search },
-  { name: 'Movies', href: '/movies', icon: Film },
-  { name: 'TV Shows', href: '/tv', icon: Tv },
-  { name: 'Anime', href: '/anime', icon: PlayCircle },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { key: 'home', href: '/', icon: Home },
+  { key: 'search', href: '/search', icon: Search },
+  { key: 'movies', href: '/movies', icon: Film },
+  { key: 'tv_shows', href: '/tv', icon: Tv },
+  { key: 'anime', href: '/anime', icon: PlayCircle },
+  { key: 'settings', href: '/settings', icon: Settings },
 ];
 
 export default function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const { t } = useLanguage();
 
   return (
     <div className="min-h-screen flex overflow-hidden" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
@@ -44,7 +46,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
             const isActive = pathname === item.href;
             return (
               <Link
-                key={item.name}
+                key={item.key}
                 href={item.href}
                 className="flex items-center gap-3 px-3 py-3 rounded-2xl transition-all duration-200 group"
                 style={isActive ? {
@@ -57,7 +59,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
               >
                 <item.icon size={20} className="shrink-0 group-hover:scale-110 transition-transform" />
                 {isSidebarOpen && (
-                  <span className="font-semibold text-sm tracking-wide">{item.name}</span>
+                  <span className="font-semibold text-sm tracking-wide">{t(item.key)}</span>
                 )}
               </Link>
             );
@@ -97,7 +99,7 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-secondary)' }} />
             <input
               type="text"
-              placeholder="Search movies, series, anime..."
+              placeholder={t('search_placeholder')}
               className="w-full rounded-2xl py-2.5 pl-11 pr-4 text-sm font-medium outline-none transition-all"
               style={{
                 background: 'var(--bg-secondary)',
@@ -134,13 +136,13 @@ export default function LayoutShell({ children }: { children: React.ReactNode })
             const isActive = pathname === item.href;
             return (
               <Link
-                key={item.name}
+                key={item.key}
                 href={item.href}
                 className="flex flex-col items-center gap-1 transition-all duration-300"
                 style={isActive ? { color: 'var(--accent)' } : { color: 'var(--text-secondary)' }}
               >
                 <item.icon size={20} strokeWidth={isActive ? 2.5 : 1.8} />
-                <span className="text-[10px] font-bold">{item.name}</span>
+                <span className="text-[10px] font-bold">{t(item.key)}</span>
               </Link>
             );
           })}
