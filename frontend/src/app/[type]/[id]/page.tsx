@@ -131,7 +131,7 @@ export default function DetailPage() {
             </div>
             {selectedLink.format === 'mp4' ? (
               <video
-                src={selectedLink.url}
+                src={`/api/proxy?url=${encodeURIComponent(selectedLink.url)}`}
                 controls
                 autoPlay
                 className="w-full rounded-2xl"
@@ -140,7 +140,7 @@ export default function DetailPage() {
                 Your browser does not support video.
               </video>
             ) : selectedLink.format === 'm3u8' ? (
-              <HlsPlayer url={selectedLink.url} />
+              <HlsPlayer url={`/api/proxy?url=${encodeURIComponent(selectedLink.url)}`} />
             ) : (
               <div className="w-full rounded-2xl p-8 text-center" style={{ background: '#111' }}>
                 <p className="text-white mb-4">This link requires external processing.</p>
