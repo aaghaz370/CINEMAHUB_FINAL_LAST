@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Play, Plus, Star, ChevronRight, Sparkles, TrendingUp } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n';
 
@@ -62,7 +63,7 @@ export default function Home() {
         // Pick top 5 with backdrops for hero carousel
         const withBackdrops = allItems.filter((m) => getBackdrop(m));
         setHeroItems(withBackdrops.slice(0, 5));
-        
+
       } catch (err) {
         console.error('Failed to load home data', err);
       } finally {
@@ -147,12 +148,12 @@ export default function Home() {
                   {activeHero.title}
                 </h1>
                 <div className="flex items-center gap-3">
-                  <button className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-white text-sm transition-all hover:scale-105" style={{ background: '#e50914', boxShadow: '0 0 20px rgba(229,9,20,0.4)' }}>
+                  <Link href={`/${activeHero.type}/${getId(activeHero)}`} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-white text-sm transition-all hover:scale-105" style={{ background: '#e50914', boxShadow: '0 0 20px rgba(229,9,20,0.4)' }}>
                     <Play size={15} fill="white" /> {t('watch_now')}
-                  </button>
-                  <button className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-black text-sm transition-all hover:scale-105" style={{ background: '#fbbf24' }}>
+                  </Link>
+                  <Link href={`/${activeHero.type}/${getId(activeHero)}`} className="flex items-center gap-2 px-5 py-2 rounded-full font-bold text-black text-sm transition-all hover:scale-105" style={{ background: '#fbbf24' }}>
                     Details
-                  </button>
+                  </Link>
                   <button className="flex items-center justify-center w-9 h-9 rounded-full text-white border border-white/20 hover:bg-white/20 transition-all" style={{ background: 'rgba(255,255,255,0.08)' }}>
                     <Plus size={17} />
                   </button>
@@ -204,7 +205,8 @@ function MediaRow({ title, items, isTop10 = false }: { title: string; items: Med
           const poster = getPoster(item);
           const id = getId(item);
           return (
-            <div
+            <Link
+              href={`/${item.type}/${id}`}
               key={`${id}-${idx}`}
               className="snap-start shrink-0 relative group rounded-2xl overflow-visible cursor-pointer"
               style={{ width: isTop10 ? '200px' : '140px' }}
@@ -260,7 +262,7 @@ function MediaRow({ title, items, isTop10 = false }: { title: string; items: Med
 
               {/* Title below */}
               <p className="mt-2 text-xs font-semibold truncate px-1" style={{ color: 'var(--text-secondary)' }}>{item.title}</p>
-            </div>
+            </Link>
           );
         })}
       </div>

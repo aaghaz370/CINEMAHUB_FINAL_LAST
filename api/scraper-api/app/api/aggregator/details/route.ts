@@ -3,6 +3,9 @@ import { getDetailsByTMDB } from '@/lib/aggregator';
 
 export const maxDuration = 90;
 
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
+export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: CORS }); }
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const id     = searchParams.get('id')?.replace(/[{}]/g, '').trim();
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
         totalLinks: (data.links || []).length,
         totalSources: data.sources.length,
       }
-    });
+    }, { headers: CORS });
   } catch (error) {
     console.error('[aggregator/details]', error);
     return NextResponse.json({
