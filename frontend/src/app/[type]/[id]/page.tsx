@@ -4,36 +4,32 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Play, Star, Clock, ChevronLeft, Tv, Film, Users,
-  Volume2, Settings2, Loader2, AlertCircle, ExternalLink
+  Volume2, Settings2, Loader2, AlertCircle, ExternalLink, RefreshCw
 } from 'lucide-react';
 
-interface Source {
-  provider: string;
-  id: string;
-  title: string;
-  postUrl: string;
-  language: string;
+interface StreamLink {
+  url: string; quality: string; language: string;
+  format: 'mp4' | 'm3u8' | 'bypass'; provider: string;
 }
-
 interface CastMember { name: string; character: string; profile: string | null; }
-
 interface MediaDetail {
   tmdbId: string; type: string; title: string; year: string;
   overview: string; poster: string | null; backdrop: string | null;
   vote_average: number; vote_count: number; genres: string[];
   runtime: number | null; status: string; cast: CastMember[];
   trailer: string | null; seasons: any[] | null;
-  sources: Source[]; totalSources: number;
-  availableLanguages: string[];
+  links: StreamLink[]; linkSummary: Record<string, { qualities: string[]; count: number }>;
+  availableLanguages: string[]; totalSources: number; totalLinks: number;
 }
 
-// no-op: languages come from API now
+const QUALITY_ORDER = ['4K', '2160p', '1080p', 'Full HD', '720p', 'Mid HD', '480p', 'Low HD', '360p', 'HD', 'Auto'];
 
-const QUALITY_OPTIONS = ['4K', '1080p', '720p', '480p', 'HD'];
-const PROVIDER_LABELS: Record<string, string> = {
+function rankQ(q: string) { return QUALITY_ORDER.indexOf(q) === -1 ? 99 : QUALITY_ORDER.indexOf(q); }
+
+const PROVIDER_LABEL: Record<string, string> = {
   themovie: 'MovieBox', netmirror: 'NetMirror', hdhub4u: 'HDHub4u',
   mod: 'MoviesMod', vega: 'VegaMovies', '4khdhub': '4KHDHub',
-  kmmovies: 'KMMovies', desiremovies: 'DesireMovies',
+  kmmovies: 'KMMovies', desiremovies: 'DesireMovies', modlist: 'MoviesLeech',
 };
 
 export default function DetailPage() {
@@ -44,112 +40,122 @@ export default function DetailPage() {
 
   const [detail, setDetail] = useState<MediaDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [linksLoading, setLinksLoading] = useState(true);
 
-  // Player state
   const [showPlayer, setShowPlayer] = useState(false);
   const [selectedLang, setSelectedLang] = useState('');
-  const [selectedQuality, setSelectedQuality] = useState('1080p');
-  const [streamLoading, setStreamLoading] = useState(false);
-  const [streamError, setStreamError] = useState('');
-  const [streamUrl, setStreamUrl] = useState('');
-  const [streamFormat, setStreamFormat] = useState('');
+  const [selectedQuality, setSelectedQuality] = useState('');
+  const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
+  const [playerError, setPlayerError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<any>(null);
 
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setLinksLoading(true);
     fetch(`/api/details?id=${id}&type=${type}`)
       .then(r => r.json())
-      .then(json => { if (json.success) setDetail(json.data); })
+      .then(json => {
+        if (json.success) {
+          const d = json.data as MediaDetail;
+          setDetail(d);
+          // Set preferred language
+          const pref = ['Hindi', 'Telugu', 'Tamil', 'Multi', 'English', 'Original']
+            .find(l => d.availableLanguages.includes(l)) || d.availableLanguages[0] || '';
+          setSelectedLang(pref);
+          // Set quality from that language's available qualities
+          const quals = d.linkSummary[pref]?.qualities || ['1080p'];
+          const qPref = QUALITY_ORDER.find(q => quals.includes(q)) || quals[0] || '1080p';
+          setSelectedQuality(qPref);
+          setLinksLoading(false);
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id, type]);
 
-  // Languages come directly from API (real dub list from TheMovieBox)
-  const allLangs = detail?.availableLanguages || [];
+  // Links for selected language
+  const linksForLang = detail?.links.filter(l => l.language === selectedLang) || [];
+  // Available qualities for this language
+  const availableQualities = detail?.linkSummary[selectedLang]?.qualities || [...new Set(linksForLang.map(l => l.quality))];
 
-  useEffect(() => {
-    if (allLangs.length && !selectedLang) {
-      const pref = ['Hindi', 'Telugu', 'Tamil', 'Multi', 'English', 'Original'].find(l => allLangs.includes(l)) || allLangs[0];
-      setSelectedLang(pref);
-    }
-  }, [allLangs.join(',')]);
-
-  // All sources can attempt any language — stream route handles matching
-  const sourcesForLang = detail?.sources || [];
-
-  async function handlePlay() {
-    if (!detail || sourcesForLang.length === 0) return;
-    setStreamError('');
-    setStreamLoading(true);
-    setStreamUrl('');
-    setStreamFormat('');
-    setShowPlayer(true);
-
-    // Try providers in order: themovie first (direct streams), then others
-    const ordered = [
-      ...sourcesForLang.filter(s => s.provider === 'themovie'),
-      ...sourcesForLang.filter(s => s.provider === 'netmirror'),
-      ...sourcesForLang.filter(s => !['themovie', 'netmirror'].includes(s.provider)),
-    ];
-
-    for (const src of ordered) {
-      try {
-        const streamUrl = `/api/stream?provider=${src.provider}&postUrl=${encodeURIComponent(src.postUrl)}&lang=${encodeURIComponent(selectedLang)}&quality=${encodeURIComponent(selectedQuality)}`;
-        // Use GET to test — stream route returns 404 JSON if not found, else streams video
-        const testRes = await fetch(streamUrl + '&test=1', { signal: AbortSignal.timeout(30000) });
-        if (testRes.ok && !testRes.headers.get('content-type')?.includes('json')) {
-          const ct = testRes.headers.get('content-type') || '';
-          setStreamUrl(streamUrl);
-          setStreamFormat(ct.includes('mpegurl') ? 'm3u8' : 'mp4');
-          setStreamLoading(false);
-          return;
-        }
-      } catch {}
-    }
-    setStreamError(`No stream found for ${selectedLang} ${selectedQuality}. Try a different option.`);
-    setStreamLoading(false);
+  // Best link for current selection (prefer mp4 > m3u8 > bypass)
+  function getBestLink(lang: string, quality: string): StreamLink | null {
+    if (!detail) return null;
+    const candidates = detail.links.filter(l => l.language === lang && l.quality === quality);
+    return candidates.find(l => l.format === 'mp4')
+      || candidates.find(l => l.format === 'm3u8')
+      || candidates[0] || null;
   }
 
-  // Initialize HLS player when streamUrl changes
-  useEffect(() => {
-    if (!streamUrl || !videoRef.current) return;
-    const video = videoRef.current;
+  function buildProxyUrl(link: StreamLink): string {
+    // For m3u8, use frontend proxy which rewrites internal playlist URLs + adds CORS
+    // For mp4, use backend proxy (same Vercel deployment that signed the URL)
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
+    if (link.format === 'm3u8') {
+      const ref = encodeURIComponent('https://themoviebox.org/');
+      return `/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
+    }
+    // mp4 — use backend proxy (same IP that resolved it)
+    const ref = encodeURIComponent('https://themoviebox.org/');
+    return `${API_BASE}/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
+  }
 
-    // Clean up previous HLS instance
+  function handlePlay(lang?: string, quality?: string) {
+    const useLang = lang || selectedLang;
+    const useQuality = quality || selectedQuality;
+    const link = getBestLink(useLang, useQuality);
+    if (!link) { setPlayerError('No stream found for this combination.'); setShowPlayer(true); return; }
+    setPlayerError('');
+    setActiveLink(link);
+    setShowPlayer(true);
+  }
+
+  // Wire up video/HLS player when activeLink changes
+  useEffect(() => {
+    if (!activeLink || !showPlayer) return;
+    const video = videoRef.current;
+    if (!video) return;
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
-    if (streamFormat === 'm3u8') {
+    if (activeLink.format === 'bypass') return; // handled separately
+
+    const src = buildProxyUrl(activeLink);
+
+    if (activeLink.format === 'm3u8') {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = streamUrl;
+        video.src = src;
         video.play().catch(() => {});
       } else {
         import('hls.js').then(({ default: Hls }) => {
           if (Hls.isSupported()) {
-            const hls = new Hls({ xhrSetup: (xhr: any) => { xhr.withCredentials = false; } });
-            hls.loadSource(streamUrl);
+            const hls = new Hls();
+            hls.loadSource(src);
             hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
             hls.on(Hls.Events.ERROR, (_: any, data: any) => {
-              if (data.fatal) setStreamError('Stream failed. Try different quality.');
+              if (data.fatal) setPlayerError('HLS stream failed. Try another quality.');
             });
             hlsRef.current = hls;
           }
         });
       }
     } else {
-      video.src = streamUrl;
+      // mp4 - try direct first
+      video.src = activeLink.url;
+      video.onerror = () => {
+        // fallback to proxy
+        video.onerror = null;
+        video.src = src;
+        video.play().catch(() => {});
+      };
       video.play().catch(() => {});
     }
-  }, [streamUrl, streamFormat]);
+  }, [activeLink, showPlayer]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-[70vh]">
-        <Loader2 size={40} className="animate-spin" style={{ color: 'var(--accent)' }} />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-[70vh]"><Loader2 size={40} className="animate-spin" style={{ color: 'var(--accent)' }} /></div>;
   }
   if (!detail) {
     return (
@@ -164,67 +170,62 @@ export default function DetailPage() {
     <div className="pb-16">
       {/* ── PLAYER OVERLAY ── */}
       {showPlayer && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center" onClick={() => setShowPlayer(false)}>
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.97)' }} onClick={() => setShowPlayer(false)}>
           <div className="w-full max-w-5xl px-4" onClick={e => e.stopPropagation()}>
             {/* Header */}
-            <div className="flex items-center justify-between mb-3 px-1">
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <h2 className="text-white font-bold text-lg">{detail.title}</h2>
-                <p className="text-white/50 text-xs">{selectedLang} · {selectedQuality}</p>
+                <h2 className="text-white font-bold">{detail.title}</h2>
+                <p className="text-white/50 text-xs">{selectedLang} · {selectedQuality}{activeLink ? ` · ${activeLink.provider}` : ''}</p>
               </div>
-              <button onClick={() => setShowPlayer(false)} className="w-9 h-9 flex items-center justify-center rounded-full text-white bg-white/10 hover:bg-white/20">✕</button>
+              <button onClick={() => setShowPlayer(false)} className="w-9 h-9 flex items-center justify-center rounded-full text-white bg-white/10 hover:bg-white/20 text-lg">✕</button>
             </div>
 
-            {/* Player */}
+            {/* Video or bypass or error */}
             <div className="relative w-full bg-black rounded-2xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
-              {streamLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-                  <Loader2 size={36} className="animate-spin text-white/60" />
-                  <p className="text-white/60 text-sm">Finding best stream for {selectedLang} {selectedQuality}...</p>
+              {activeLink?.format === 'bypass' ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                  <ExternalLink size={36} className="text-white/60" />
+                  <p className="text-white/70 text-sm">This stream requires an external player.</p>
+                  <a href={activeLink.url} target="_blank" rel="noopener noreferrer"
+                    className="px-6 py-3 rounded-xl font-bold text-white" style={{ background: 'var(--accent)' }}>
+                    Open Stream Link
+                  </a>
                 </div>
-              )}
-              {streamError && !streamLoading && (
+              ) : playerError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
                   <AlertCircle size={36} className="text-red-400" />
-                  <p className="text-white/70 text-sm text-center">{streamError}</p>
-                  {detail.trailer && (
-                    <a href={`https://youtube.com/watch?v=${detail.trailer}`} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
-                      style={{ background: 'var(--accent)' }}>
-                      <ExternalLink size={14} /> Watch Trailer
-                    </a>
-                  )}
+                  <p className="text-white/70 text-sm text-center">{playerError}</p>
                 </div>
+              ) : (
+                <video ref={videoRef} controls autoPlay playsInline
+                  className="w-full h-full bg-black" crossOrigin="anonymous"
+                  onError={() => setPlayerError('Stream unavailable. Try different quality or language.')}
+                />
               )}
-              <video
-                ref={videoRef}
-                controls
-                className="w-full h-full"
-                style={{ display: streamUrl && !streamError ? 'block' : 'none' }}
-                crossOrigin="anonymous"
-              />
             </div>
 
-            {/* In-player controls */}
+            {/* In-player selectors */}
             <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {allLangs.map(lang => (
-                <button key={lang} onClick={() => { setSelectedLang(lang); }}
+              {detail.availableLanguages.map(lang => (
+                <button key={lang}
+                  onClick={() => { setSelectedLang(lang); const q = detail.linkSummary[lang]?.qualities[0] || selectedQuality; setSelectedQuality(q); handlePlay(lang, q); }}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
                   style={{ background: selectedLang === lang ? 'var(--accent)' : 'rgba(255,255,255,0.1)', color: 'white' }}>
                   {lang}
                 </button>
               ))}
               <span className="text-white/20">|</span>
-              {QUALITY_OPTIONS.map(q => (
-                <button key={q} onClick={() => setSelectedQuality(q)}
+              {availableQualities.map(q => (
+                <button key={q}
+                  onClick={() => { setSelectedQuality(q); handlePlay(selectedLang, q); }}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
                   style={{ background: selectedQuality === q ? '#facc14' : 'rgba(255,255,255,0.1)', color: selectedQuality === q ? '#000' : 'white' }}>
                   {q}
                 </button>
               ))}
-              <button onClick={handlePlay} className="ml-auto px-4 py-1.5 rounded-lg text-xs font-bold text-white flex items-center gap-1"
-                style={{ background: 'var(--accent)' }}>
-                <Play size={12} fill="white" /> Reload
+              <button onClick={() => handlePlay()} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'var(--accent)' }}>
+                <RefreshCw size={12} /> Retry
               </button>
             </div>
           </div>
@@ -247,7 +248,7 @@ export default function DetailPage() {
           {/* Poster */}
           <div className="shrink-0">
             {detail.poster
-              ? <img src={detail.poster} alt={detail.title} className="w-44 md:w-56 rounded-2xl shadow-2xl" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }} />
+              ? <img src={detail.poster} alt={detail.title} className="w-44 md:w-56 rounded-2xl" style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.6)' }} />
               : <div className="w-44 md:w-56 aspect-[2/3] rounded-2xl flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}><Film size={40} style={{ color: 'var(--text-secondary)' }} /></div>
             }
           </div>
@@ -276,9 +277,13 @@ export default function DetailPage() {
 
             {/* Stream Controls */}
             <div className="pt-2 space-y-4">
-              {detail.totalSources === 0 ? (
+              {linksLoading ? (
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <Loader2 size={16} className="animate-spin" /> Finding streams...
+                </div>
+              ) : detail.totalLinks === 0 ? (
                 <div className="p-3 rounded-xl text-sm" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                  No sources found for this title.
+                  No streams found. Try again later.
                 </div>
               ) : (
                 <>
@@ -288,8 +293,13 @@ export default function DetailPage() {
                       <Volume2 size={13} /> Language
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {allLangs.map(lang => (
-                        <button key={lang} onClick={() => setSelectedLang(lang)}
+                      {detail.availableLanguages.map(lang => (
+                        <button key={lang} onClick={() => {
+                          setSelectedLang(lang);
+                          const qs = detail.linkSummary[lang]?.qualities || [];
+                          const qPref = QUALITY_ORDER.find(q => qs.includes(q)) || qs[0] || '1080p';
+                          setSelectedQuality(qPref);
+                        }}
                           className="px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
                           style={{ background: selectedLang === lang ? 'var(--accent)' : 'var(--bg-secondary)', color: selectedLang === lang ? 'white' : 'var(--text-secondary)', boxShadow: selectedLang === lang ? '0 4px 16px var(--accent-glow)' : 'none' }}>
                           {lang}
@@ -304,7 +314,7 @@ export default function DetailPage() {
                       <Settings2 size={13} /> Quality
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {QUALITY_OPTIONS.map(q => (
+                      {availableQualities.map(q => (
                         <button key={q} onClick={() => setSelectedQuality(q)}
                           className="px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
                           style={{ background: selectedQuality === q ? '#facc14' : 'var(--bg-secondary)', color: selectedQuality === q ? '#000' : 'var(--text-secondary)' }}>
@@ -314,9 +324,9 @@ export default function DetailPage() {
                     </div>
                   </div>
 
-                  {/* Play + Source list */}
+                  {/* Play + Trailer */}
                   <div className="flex gap-3 flex-wrap pt-2 items-center">
-                    <button onClick={handlePlay}
+                    <button onClick={() => handlePlay()}
                       className="flex items-center gap-2 px-8 py-3 rounded-2xl font-black text-white text-base transition-all hover:scale-105"
                       style={{ background: 'var(--accent)', boxShadow: '0 6px 30px var(--accent-glow)' }}>
                       <Play size={18} fill="white" /> Watch Now
@@ -330,15 +340,10 @@ export default function DetailPage() {
                     )}
                   </div>
 
-                  {/* Available sources */}
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {detail.sources.map(s => (
-                      <span key={s.provider} className="px-2 py-0.5 rounded-md text-[10px] font-bold"
-                        style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
-                        {PROVIDER_LABELS[s.provider] || s.provider}
-                      </span>
-                    ))}
-                  </div>
+                  {/* Stats */}
+                  <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {detail.totalSources} sources · {detail.totalLinks} streams
+                  </p>
                 </>
               )}
             </div>
