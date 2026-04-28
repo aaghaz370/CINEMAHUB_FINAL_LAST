@@ -24,21 +24,10 @@ interface MediaDetail {
   runtime: number | null; status: string; cast: CastMember[];
   trailer: string | null; seasons: any[] | null;
   sources: Source[]; totalSources: number;
+  availableLanguages: string[];
 }
 
-// Detect language from provider source
-function srcLangs(src: Source): string[] {
-  const raw = (src.language || src.title || '').toLowerCase();
-  const langs: string[] = [];
-  if (raw.includes('hindi') || raw.includes('hin')) langs.push('Hindi');
-  if (raw.includes('telugu')) langs.push('Telugu');
-  if (raw.includes('tamil')) langs.push('Tamil');
-  if (raw.includes('malayalam')) langs.push('Malayalam');
-  if (raw.includes('english') || raw.includes('eng')) langs.push('English');
-  if (raw.includes('multi') || raw.includes('dual')) langs.push('Multi');
-  if (langs.length === 0) langs.push('Multi');
-  return langs;
-}
+// no-op: languages come from API now
 
 const QUALITY_OPTIONS = ['4K', '1080p', '720p', '480p', 'HD'];
 const PROVIDER_LABELS: Record<string, string> = {
@@ -77,48 +66,49 @@ export default function DetailPage() {
       .finally(() => setLoading(false));
   }, [id, type]);
 
-  // Collect all unique languages from sources
-  const allLangs = detail
-    ? [...new Set(detail.sources.flatMap(srcLangs))]
-    : [];
+  // Languages come directly from API (real dub list from TheMovieBox)
+  const allLangs = detail?.availableLanguages || [];
 
-  // Set default language
   useEffect(() => {
     if (allLangs.length && !selectedLang) {
-      const pref = ['Hindi', 'Multi', 'Telugu', 'English'].find(l => allLangs.includes(l)) || allLangs[0];
+      const pref = ['Hindi', 'Telugu', 'Tamil', 'Multi', 'English', 'Original'].find(l => allLangs.includes(l)) || allLangs[0];
       setSelectedLang(pref);
     }
-  }, [allLangs.length]);
+  }, [allLangs.join(',')]);
 
-  // Sources that support selected language
-  const sourcesForLang = detail?.sources.filter(s => {
-    const langs = srcLangs(s);
-    return langs.includes(selectedLang) || langs.includes('Multi');
-  }) || [];
+  // All sources can attempt any language — stream route handles matching
+  const sourcesForLang = detail?.sources || [];
 
   async function handlePlay() {
     if (!detail || sourcesForLang.length === 0) return;
     setStreamError('');
     setStreamLoading(true);
     setStreamUrl('');
+    setStreamFormat('');
     setShowPlayer(true);
 
-    // Try each source until one works
-    for (const src of sourcesForLang) {
+    // Try providers in order: themovie first (direct streams), then others
+    const ordered = [
+      ...sourcesForLang.filter(s => s.provider === 'themovie'),
+      ...sourcesForLang.filter(s => s.provider === 'netmirror'),
+      ...sourcesForLang.filter(s => !['themovie', 'netmirror'].includes(s.provider)),
+    ];
+
+    for (const src of ordered) {
       try {
-        const url = `/api/stream?provider=${src.provider}&postUrl=${encodeURIComponent(src.postUrl)}&lang=${encodeURIComponent(selectedLang)}&quality=${encodeURIComponent(selectedQuality)}`;
-        const res = await fetch(url, { method: 'HEAD' });
-        if (res.ok) {
-          const ct = res.headers.get('content-type') || '';
-          const fmt = ct.includes('mpegurl') ? 'm3u8' : 'mp4';
-          setStreamUrl(url);
-          setStreamFormat(fmt);
+        const streamUrl = `/api/stream?provider=${src.provider}&postUrl=${encodeURIComponent(src.postUrl)}&lang=${encodeURIComponent(selectedLang)}&quality=${encodeURIComponent(selectedQuality)}`;
+        // Use GET to test — stream route returns 404 JSON if not found, else streams video
+        const testRes = await fetch(streamUrl + '&test=1', { signal: AbortSignal.timeout(30000) });
+        if (testRes.ok && !testRes.headers.get('content-type')?.includes('json')) {
+          const ct = testRes.headers.get('content-type') || '';
+          setStreamUrl(streamUrl);
+          setStreamFormat(ct.includes('mpegurl') ? 'm3u8' : 'mp4');
           setStreamLoading(false);
           return;
         }
       } catch {}
     }
-    setStreamError(`No stream found for ${selectedLang} ${selectedQuality}. Try different language or quality.`);
+    setStreamError(`No stream found for ${selectedLang} ${selectedQuality}. Try a different option.`);
     setStreamLoading(false);
   }
 
