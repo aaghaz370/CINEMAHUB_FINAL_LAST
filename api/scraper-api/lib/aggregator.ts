@@ -343,8 +343,19 @@ export async function getDetailsByTMDB(
   season?: string,
   episode?: string
 ): Promise<UnifiedMedia | null> {
-  const tmdbDetails = await getTMDBDetails(tmdbId, type);
-  if (!tmdbDetails) return null;
+  let tmdbDetails = await getTMDBDetails(tmdbId, type);
+  // If TMDB unavailable, we still try providers — they'll return links without TMDB metadata
+  const hasTmdb = !!tmdbDetails;
+  if (!tmdbDetails) {
+    // Create minimal stub so provider search still runs
+    tmdbDetails = {
+      id: parseInt(tmdbId),
+      title: tmdbId, name: tmdbId,
+      overview: '', poster_path: null, backdrop_path: null,
+      vote_average: 0, media_type: type,
+      genres: [], credits: { cast: [] },
+    } as any;
+  }
 
   const unified: UnifiedMedia = {
     tmdbId,

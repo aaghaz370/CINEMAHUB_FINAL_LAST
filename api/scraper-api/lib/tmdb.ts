@@ -35,7 +35,7 @@ export async function searchTMDB(query: string, type: 'movie' | 'tv' | 'multi' =
   for (let i = 0; i < retries; i++) {
     try {
       const url = `${TMDB_BASE_URL}/search/${type}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&include_adult=false`;
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
       if (!response.ok) {
         if (response.status === 404) return [];
         throw new Error(`TMDB API HTTP error: ${response.status}`);
@@ -59,7 +59,7 @@ export async function getTMDBDetails(id: number | string, type: 'movie' | 'tv', 
   for (let i = 0; i < retries; i++) {
     try {
       const url = `${TMDB_BASE_URL}/${type}/${id}?api_key=${TMDB_API_KEY}&append_to_response=credits`;
-      const response = await fetch(url);
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
       if (!response.ok) {
         if (response.status === 404) return null;
         throw new Error(`TMDB Details HTTP error: ${response.status}`);
