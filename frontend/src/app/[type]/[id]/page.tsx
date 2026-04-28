@@ -47,6 +47,8 @@ export default function DetailPage() {
   const [selectedQuality, setSelectedQuality] = useState('');
   const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
   const [playerError, setPlayerError] = useState('');
+  const [resolving, setResolving] = useState(false); // resolving bypass link
+  const [bypassUrl, setBypassUrl] = useState('');    // fallback external link
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<any>(null);
 
@@ -80,46 +82,71 @@ export default function DetailPage() {
   // Available qualities for this language
   const availableQualities = detail?.linkSummary[selectedLang]?.qualities || [...new Set(linksForLang.map(l => l.quality))];
 
-  // Best link for current selection (prefer mp4 > m3u8 > bypass, skip known-blocked CDNs)
-  function getBestLink(lang: string, quality: string): StreamLink | null {
-    if (!detail) return null;
-    // hakunaymatata.com is IP-locked to the Vercel backend IP — skip it
-    const BLOCKED_CDNS = ['hakunaymatata.com'];
-    const isBlocked = (url: string) => BLOCKED_CDNS.some(cdn => url.includes(cdn));
-    
-    const candidates = detail.links.filter(l => l.language === lang && l.quality === quality && !isBlocked(l.url));
-    // If nothing at requested quality, try any quality for this lang
-    const pool = candidates.length > 0 ? candidates : detail.links.filter(l => l.language === lang && !isBlocked(l.url));
-    return pool.find(l => l.format === 'mp4')
-      || pool.find(l => l.format === 'm3u8')
-      || pool[0] || null;
-  }
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
 
-  function buildProxyUrl(link: StreamLink): string {
-    // If it's already a backend proxy URL, use it directly (avoid double-proxying)
-    if (link.url.includes(`${API_BASE}/api/`) || link.url.includes('cinemahub-api.vercel.app/api/')) {
-      return link.url;
-    }
-    // For m3u8: use frontend proxy (rewrites playlist + CORS)
-    if (link.format === 'm3u8') {
-      const ref = encodeURIComponent('https://themoviebox.org/');
-      return `/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
-    }
-    // For mp4: use backend proxy with correct referer (same Vercel deployment = same IP range)
-    const ref = encodeURIComponent('https://themoviebox.org/');
-    return `${API_BASE}/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
+  // Domains that are bypass/redirect pages, NOT direct video URLs
+  const BYPASS_DOMAINS = ['hakunaymatata.com','cloud.unblockedgames.world','hubcloud','hubdrive','gdflix','streamtape','workupload'];
+  const isBypassDomain = (url: string) => BYPASS_DOMAINS.some(d => url.includes(d));
+
+  function getBestLink(lang: string, quality: string): StreamLink | null {
+    if (!detail) return null;
+    const candidates = detail.links.filter(l => l.language === lang && l.quality === quality);
+    const pool = candidates.length > 0 ? candidates : detail.links.filter(l => l.language === lang);
+    // Prefer m3u8 (direct stream) > non-bypass mp4 > bypass
+    return pool.find(l => l.format === 'm3u8')
+      || pool.find(l => l.format === 'mp4' && !isBypassDomain(l.url))
+      || pool.find(l => !isBypassDomain(l.url))
+      || pool[0] || null;
   }
 
-  function handlePlay(lang?: string, quality?: string) {
+  function buildProxyUrl(url: string, format: string): string {
+    if (url.includes(`${API_BASE}/api/`) || url.includes('cinemahub-api.vercel.app/api/')) return url;
+    if (format === 'm3u8') return `/api/proxy?url=${encodeURIComponent(url)}&req_referer=${encodeURIComponent('https://themoviebox.org/')}`;
+    return `${API_BASE}/api/proxy?url=${encodeURIComponent(url)}&req_referer=${encodeURIComponent('https://themoviebox.org/')}`;
+  }
+
+  async function resolveAndPlay(lang?: string, quality?: string) {
     const useLang = lang || selectedLang;
     const useQuality = quality || selectedQuality;
     const link = getBestLink(useLang, useQuality);
-    if (!link) { setPlayerError('No stream found for this combination.'); setShowPlayer(true); return; }
+
     setPlayerError('');
-    setActiveLink(link);
+    setBypassUrl('');
     setShowPlayer(true);
+
+    if (!link) {
+      setPlayerError('No stream available. Try another language or quality.');
+      return;
+    }
+
+    // If it's a bypass domain, try to resolve it via the extractor
+    if (isBypassDomain(link.url) || link.format === 'bypass') {
+      setResolving(true);
+      setActiveLink(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/extractors/hubcloud?url=${encodeURIComponent(link.url)}`);
+        const data = await res.json();
+        if (data.success && data.links?.length > 0) {
+          // Pick a direct video link (prefer .mkv or .mp4)
+          const best = data.links.find((l: any) => /\.(mkv|mp4)/i.test(l.link)) || data.links[0];
+          const resolvedLink: StreamLink = { url: best.link, quality: link.quality, language: link.language, format: 'mp4', provider: link.provider };
+          setActiveLink(resolvedLink);
+        } else {
+          // Can't resolve — show external link fallback
+          setBypassUrl(link.url);
+          setPlayerError('Could not auto-resolve this stream. Open externally:');
+        }
+      } catch {
+        setBypassUrl(link.url);
+        setPlayerError('Could not auto-resolve this stream. Open externally:');
+      } finally {
+        setResolving(false);
+      }
+      return;
+    }
+
+    setActiveLink(link);
   }
 
   // Wire up video/HLS player when activeLink changes
@@ -131,32 +158,25 @@ export default function DetailPage() {
 
     if (activeLink.format === 'bypass') return;
 
-    const src = buildProxyUrl(activeLink);
+    const src = buildProxyUrl(activeLink.url, activeLink.format);
 
     if (activeLink.format === 'm3u8') {
-      // Set crossOrigin for HLS (needs CORS for XHR chunk fetching)
       video.crossOrigin = 'anonymous';
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-        video.play().catch(() => {});
+        video.src = src; video.play().catch(() => {});
       } else {
         import('hls.js').then(({ default: Hls }) => {
           if (Hls.isSupported()) {
             const hls = new Hls();
-            hls.loadSource(src);
-            hls.attachMedia(video);
+            hls.loadSource(src); hls.attachMedia(video);
             hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
-            hls.on(Hls.Events.ERROR, (_: any, data: any) => {
-              if (data.fatal) setPlayerError('HLS stream failed. Try another quality.');
-            });
+            hls.on(Hls.Events.ERROR, (_: any, data: any) => { if (data.fatal) setPlayerError('HLS stream failed. Try another quality.'); });
             hlsRef.current = hls;
           }
         });
       }
     } else {
-      // mp4 — remove crossOrigin so browser does NOT enforce CORS (allows gadgetsweb, etc.)
       video.removeAttribute('crossorigin');
-      // Use backend proxy directly (avoids CORS, same Vercel IP range)
       video.src = src;
       video.play().catch(() => {});
     }
@@ -180,7 +200,6 @@ export default function DetailPage() {
       {showPlayer && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.97)' }} onClick={() => setShowPlayer(false)}>
           <div className="w-full max-w-5xl px-4" onClick={e => e.stopPropagation()}>
-            {/* Header */}
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="text-white font-bold">{detail.title}</h2>
@@ -189,24 +208,24 @@ export default function DetailPage() {
               <button onClick={() => setShowPlayer(false)} className="w-9 h-9 flex items-center justify-center rounded-full text-white bg-white/10 hover:bg-white/20 text-lg">✕</button>
             </div>
 
-            {/* Video or bypass or error */}
             <div className="relative w-full bg-black rounded-2xl overflow-hidden" style={{ aspectRatio: '16/9' }}>
-              {activeLink?.format === 'bypass' ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                  <ExternalLink size={36} className="text-white/60" />
-                  <p className="text-white/70 text-sm">This stream requires an external player.</p>
-                  <a href={activeLink.url} target="_blank" rel="noopener noreferrer"
-                    className="px-6 py-3 rounded-xl font-bold text-white" style={{ background: 'var(--accent)' }}>
-                    Open Stream Link
-                  </a>
+              {resolving ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+                  <Loader2 size={40} className="animate-spin" style={{ color: 'var(--accent)' }} />
+                  <p className="text-white/70 text-sm">Resolving stream link...</p>
                 </div>
               ) : playerError ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6">
                   <AlertCircle size={36} className="text-red-400" />
                   <p className="text-white/70 text-sm text-center">{playerError}</p>
+                  {bypassUrl && (
+                    <a href={bypassUrl} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-white" style={{ background: 'var(--accent)' }}>
+                      <ExternalLink size={16} /> Open External Link
+                    </a>
+                  )}
                 </div>
               ) : (
-                // No crossOrigin attr on the video element itself — it's set dynamically per format
                 <video ref={videoRef} controls autoPlay playsInline
                   className="w-full h-full bg-black"
                   onError={() => setPlayerError('Stream unavailable. Try different quality or language.')}
@@ -214,11 +233,10 @@ export default function DetailPage() {
               )}
             </div>
 
-            {/* In-player selectors */}
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               {detail.availableLanguages.map(lang => (
                 <button key={lang}
-                  onClick={() => { setSelectedLang(lang); const q = detail.linkSummary[lang]?.qualities[0] || selectedQuality; setSelectedQuality(q); handlePlay(lang, q); }}
+                  onClick={() => { setSelectedLang(lang); const q = detail.linkSummary[lang]?.qualities[0] || selectedQuality; setSelectedQuality(q); resolveAndPlay(lang, q); }}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
                   style={{ background: selectedLang === lang ? 'var(--accent)' : 'rgba(255,255,255,0.1)', color: 'white' }}>
                   {lang}
@@ -227,13 +245,13 @@ export default function DetailPage() {
               <span className="text-white/20">|</span>
               {availableQualities.map(q => (
                 <button key={q}
-                  onClick={() => { setSelectedQuality(q); handlePlay(selectedLang, q); }}
+                  onClick={() => { setSelectedQuality(q); resolveAndPlay(selectedLang, q); }}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
                   style={{ background: selectedQuality === q ? '#facc14' : 'rgba(255,255,255,0.1)', color: selectedQuality === q ? '#000' : 'white' }}>
                   {q}
                 </button>
               ))}
-              <button onClick={() => handlePlay()} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'var(--accent)' }}>
+              <button onClick={() => resolveAndPlay()} className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-white" style={{ background: 'var(--accent)' }}>
                 <RefreshCw size={12} /> Retry
               </button>
             </div>
@@ -335,7 +353,7 @@ export default function DetailPage() {
 
                   {/* Play + Trailer */}
                   <div className="flex gap-3 flex-wrap pt-2 items-center">
-                    <button onClick={() => handlePlay()}
+                    <button onClick={() => resolveAndPlay()}
                       className="flex items-center gap-2 px-8 py-3 rounded-2xl font-black text-white text-base transition-all hover:scale-105"
                       style={{ background: 'var(--accent)', boxShadow: '0 6px 30px var(--accent-glow)' }}>
                       <Play size={18} fill="white" /> Watch Now

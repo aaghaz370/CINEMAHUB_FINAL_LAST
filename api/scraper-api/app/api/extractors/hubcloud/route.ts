@@ -119,6 +119,52 @@ export async function GET(request: NextRequest) {
 
     let html = await step1Res.text();
     let filename = extractFilename(html);
+
+    // ─── STEP 1b: Handle _wp_http POST chain (cloud.unblockedgames.world, hubcloud alternatives) ─
+    // These pages auto-submit a form with _wp_http via JavaScript. We simulate it.
+    let postAttempts = 0;
+    while (postAttempts < 4) {
+      const wpMatch = html.match(/<form[^>]+action=["']([^"']+)["'][^>]*>[\s\S]*?<input[^>]+name=["']_wp_http["'][^>]+value=["']([^"']+)["']/i)
+        || html.match(/<input[^>]+name=["']_wp_http["'][^>]+value=["']([^"']*?)["'][\s\S]*?<form[^>]+action=["']([^"']+)["']/i);
+      if (!wpMatch) break;
+      // extract action and value — group order differs by regex variant
+      let formAction = wpMatch[1].startsWith('http') ? wpMatch[1] : wpMatch[2];
+      let wpValue    = wpMatch[1].startsWith('http') ? wpMatch[2] : wpMatch[1];
+      if (!formAction || !wpValue) break;
+
+      // Also grab optional _wp_http2 / _wp_http_referer fields
+      const wp2Match = html.match(/name=["']_wp_http2["'][^>]+value=["']([^"']+)["']/i);
+      const wpRefMatch = html.match(/name=["']_wp_http_referer["'][^>]+value=["']([^"']+)["']/i);
+
+      const body = new URLSearchParams({ _wp_http: wpValue });
+      if (wp2Match) body.set('_wp_http2', wp2Match[1]);
+      if (wpRefMatch) body.set('_wp_http_referer', wpRefMatch[1]);
+
+      const postRes = await fetch(formAction, {
+        method: 'POST',
+        headers: {
+          'User-Agent': UA,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': cleanUrl,
+          'Origin': new URL(formAction).origin,
+        },
+        body: body.toString(),
+        redirect: 'follow',
+      });
+
+      if (!postRes.ok) break;
+      const newHtml = await postRes.text();
+      if (newHtml === html) break; // no progress
+      html = newHtml;
+      if (!filename) filename = extractFilename(html);
+      postAttempts++;
+
+      // Check if we already have download links in this response
+      if (html.includes('.mkv') || html.includes('.mp4') || html.includes('download')) {
+        break; // might have links, proceed to extraction
+      }
+    }
+
     const $ = cheerio.load(html);
 
     // ─── STEP 2: For HubDrive, find the embedded HubCloud link first ────────
@@ -126,7 +172,7 @@ export async function GET(request: NextRequest) {
       const hcLink = $('a').filter((_, el) => {
         const h = $(el).attr('href') || '';
         const t = $(el).text().toLowerCase();
-        return h.includes('http') && (t.includes('hubcloud') || h.includes('hubcloud'));
+        return h.includes('http') && (t.includes('hubcloud') || h.includes('hubcloud') || h.includes('unblockedgames'));
       }).attr('href');
 
       if (hcLink) {
@@ -137,10 +183,9 @@ export async function GET(request: NextRequest) {
         });
         html = await hcRes.text();
         if (!filename) filename = extractFilename(html);
-      } else {
-        // HubDrive might have token link directly
       }
     }
+
 
     // ─── STEP 3: Get the token bypass URL ───────────────────────────────────
     const bypassUrl = await getBypassUrl(html);
