@@ -80,24 +80,34 @@ export default function DetailPage() {
   // Available qualities for this language
   const availableQualities = detail?.linkSummary[selectedLang]?.qualities || [...new Set(linksForLang.map(l => l.quality))];
 
-  // Best link for current selection (prefer mp4 > m3u8 > bypass)
+  // Best link for current selection (prefer mp4 > m3u8 > bypass, skip known-blocked CDNs)
   function getBestLink(lang: string, quality: string): StreamLink | null {
     if (!detail) return null;
-    const candidates = detail.links.filter(l => l.language === lang && l.quality === quality);
-    return candidates.find(l => l.format === 'mp4')
-      || candidates.find(l => l.format === 'm3u8')
-      || candidates[0] || null;
+    // hakunaymatata.com is IP-locked to the Vercel backend IP — skip it
+    const BLOCKED_CDNS = ['hakunaymatata.com'];
+    const isBlocked = (url: string) => BLOCKED_CDNS.some(cdn => url.includes(cdn));
+    
+    const candidates = detail.links.filter(l => l.language === lang && l.quality === quality && !isBlocked(l.url));
+    // If nothing at requested quality, try any quality for this lang
+    const pool = candidates.length > 0 ? candidates : detail.links.filter(l => l.language === lang && !isBlocked(l.url));
+    return pool.find(l => l.format === 'mp4')
+      || pool.find(l => l.format === 'm3u8')
+      || pool[0] || null;
   }
 
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
+
   function buildProxyUrl(link: StreamLink): string {
-    // For m3u8, use frontend proxy which rewrites internal playlist URLs + adds CORS
-    // For mp4, use backend proxy (same Vercel deployment that signed the URL)
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
+    // If it's already a backend proxy URL, use it directly (avoid double-proxying)
+    if (link.url.includes(`${API_BASE}/api/`) || link.url.includes('cinemahub-api.vercel.app/api/')) {
+      return link.url;
+    }
+    // For m3u8: use frontend proxy (rewrites playlist + CORS)
     if (link.format === 'm3u8') {
       const ref = encodeURIComponent('https://themoviebox.org/');
       return `/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
     }
-    // mp4 — use backend proxy (same IP that resolved it)
+    // For mp4: use backend proxy with correct referer (same Vercel deployment = same IP range)
     const ref = encodeURIComponent('https://themoviebox.org/');
     return `${API_BASE}/api/proxy?url=${encodeURIComponent(link.url)}&req_referer=${ref}`;
   }
@@ -119,11 +129,13 @@ export default function DetailPage() {
     if (!video) return;
     if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
 
-    if (activeLink.format === 'bypass') return; // handled separately
+    if (activeLink.format === 'bypass') return;
 
     const src = buildProxyUrl(activeLink);
 
     if (activeLink.format === 'm3u8') {
+      // Set crossOrigin for HLS (needs CORS for XHR chunk fetching)
+      video.crossOrigin = 'anonymous';
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
         video.play().catch(() => {});
@@ -142,14 +154,10 @@ export default function DetailPage() {
         });
       }
     } else {
-      // mp4 - try direct first
-      video.src = activeLink.url;
-      video.onerror = () => {
-        // fallback to proxy
-        video.onerror = null;
-        video.src = src;
-        video.play().catch(() => {});
-      };
+      // mp4 — remove crossOrigin so browser does NOT enforce CORS (allows gadgetsweb, etc.)
+      video.removeAttribute('crossorigin');
+      // Use backend proxy directly (avoids CORS, same Vercel IP range)
+      video.src = src;
       video.play().catch(() => {});
     }
   }, [activeLink, showPlayer]);
@@ -198,8 +206,9 @@ export default function DetailPage() {
                   <p className="text-white/70 text-sm text-center">{playerError}</p>
                 </div>
               ) : (
+                // No crossOrigin attr on the video element itself — it's set dynamically per format
                 <video ref={videoRef} controls autoPlay playsInline
-                  className="w-full h-full bg-black" crossOrigin="anonymous"
+                  className="w-full h-full bg-black"
                   onError={() => setPlayerError('Stream unavailable. Try different quality or language.')}
                 />
               )}
