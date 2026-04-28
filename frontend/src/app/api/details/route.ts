@@ -37,7 +37,13 @@ export async function GET(request: Request) {
   const links: any[] = aggData?.links || [];
   const linkSummary: any = aggData?.linkSummary || {};
 
-  // Available languages from linkSummary (real data from all providers)
+  // TMB sources — postUrls used for on-demand fresh IP-signed stream resolution
+  const tmbSources: { postUrl: string; title: string }[] = (aggData?.sources || [])
+    .filter((s: any) => s.provider === 'themovie' && s.postUrl)
+    .map((s: any) => ({ postUrl: s.postUrl, title: s.title || '' }))
+    .slice(0, 5);
+
+  // Available languages
   const availableLanguages = Object.keys(linkSummary).length > 0
     ? Object.keys(linkSummary)
     : links.length > 0
@@ -71,12 +77,13 @@ export async function GET(request: Request) {
         (v: any) => v.site === 'YouTube' && (v.type === 'Trailer' || v.type === 'Teaser')
       )?.key || null,
       seasons: type === 'tv' ? tmdb?.seasons?.filter((s: any) => s.season_number > 0) : null,
-      // Streaming data from aggregator (fully resolved)
       links,
       linkSummary,
       availableLanguages,
       totalSources: aggData?.totalSources || 0,
       totalLinks: links.length,
+      // TMB on-demand source URLs (fresh IP-signed streams at play-time)
+      tmbSources,
     },
   });
 }

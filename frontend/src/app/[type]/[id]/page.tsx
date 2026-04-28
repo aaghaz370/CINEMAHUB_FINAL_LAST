@@ -11,6 +11,8 @@ interface StreamLink {
   url: string; quality: string; language: string;
   format: 'mp4' | 'm3u8' | 'bypass'; provider: string;
 }
+interface TmbDub { name: string; code: string; subjectId: string; detailPath: string; detailUrl: string; }
+interface TmbStream { quality: string; url: string; format: 'mp4' | 'm3u8'; }
 interface CastMember { name: string; character: string; profile: string | null; }
 interface MediaDetail {
   tmdbId: string; type: string; title: string; year: string;
@@ -20,6 +22,7 @@ interface MediaDetail {
   trailer: string | null; seasons: any[] | null;
   links: StreamLink[]; linkSummary: Record<string, { qualities: string[]; count: number }>;
   availableLanguages: string[]; totalSources: number; totalLinks: number;
+  tmbSources: { postUrl: string; title: string }[];
 }
 
 const QUALITY_ORDER = ['4K', '2160p', '1080p', 'Full HD', '720p', 'Mid HD', '480p', 'Low HD', '360p', 'HD', 'Auto'];
@@ -42,13 +45,19 @@ export default function DetailPage() {
   const [loading, setLoading] = useState(true);
   const [linksLoading, setLinksLoading] = useState(true);
 
+  // TMB-specific state
+  const [tmbDubs, setTmbDubs] = useState<TmbDub[]>([]); // all language dubs from TMB
+  const [tmbMainUrl, setTmbMainUrl] = useState('');      // main TMB detail URL
+  const [tmbStreams, setTmbStreams] = useState<Record<string, TmbStream[]>>({}); // cached streams per lang
+  const [tmbLangMap, setTmbLangMap] = useState<Record<string, string>>({}); // lang → detailUrl
+
   const [showPlayer, setShowPlayer] = useState(false);
   const [selectedLang, setSelectedLang] = useState('');
   const [selectedQuality, setSelectedQuality] = useState('');
   const [activeLink, setActiveLink] = useState<StreamLink | null>(null);
   const [playerError, setPlayerError] = useState('');
-  const [resolving, setResolving] = useState(false); // resolving bypass link
-  const [bypassUrl, setBypassUrl] = useState('');    // fallback external link
+  const [resolving, setResolving] = useState(false);
+  const [bypassUrl, setBypassUrl] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<any>(null);
 
@@ -58,34 +67,75 @@ export default function DetailPage() {
     setLinksLoading(true);
     fetch(`/api/details?id=${id}&type=${type}`)
       .then(r => r.json())
-      .then(json => {
+      .then(async json => {
         if (json.success) {
           const d = json.data as MediaDetail;
           setDetail(d);
-          // Set preferred language
+
+          // Preferred language
           const pref = ['Hindi', 'Telugu', 'Tamil', 'Multi', 'English', 'Original']
             .find(l => d.availableLanguages.includes(l)) || d.availableLanguages[0] || '';
           setSelectedLang(pref);
-          // Set quality from that language's available qualities
           const quals = d.linkSummary[pref]?.qualities || ['1080p'];
-          const qPref = QUALITY_ORDER.find(q => quals.includes(q)) || quals[0] || '1080p';
-          setSelectedQuality(qPref);
+          setSelectedQuality(QUALITY_ORDER.find(q => quals.includes(q)) || quals[0] || '1080p');
           setLinksLoading(false);
+
+          // Fetch TMB dubs for language selector
+          if (d.tmbSources?.length > 0) {
+            const firstUrl = d.tmbSources[0].postUrl;
+            setTmbMainUrl(firstUrl);
+            try {
+              const tr = await fetch(`/api/tmb-play?url=${encodeURIComponent(firstUrl)}`);
+              const tj = await tr.json();
+              if (tj.success) {
+                const dubs: TmbDub[] = tj.dubs || [];
+                setTmbDubs(dubs);
+                // Build lang map: main language + dubs
+                const langMap: Record<string, string> = {};
+                const mainLang = detectTmbLang(d.tmbSources[0].title) || 'Original';
+                langMap[mainLang] = firstUrl;
+                for (const dub of dubs) {
+                  if (dub.name && dub.detailUrl) langMap[dub.name] = dub.detailUrl;
+                }
+                setTmbLangMap(langMap);
+                // Cache main streams
+                const mainStreams: TmbStream[] = tj.streams || [];
+                if (mainStreams.length > 0) {
+                  setTmbStreams(prev => ({ ...prev, [mainLang]: mainStreams }));
+                }
+              }
+            } catch { /* TMB fetch failed — continue with other providers */ }
+          }
         }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id, type]);
 
-  // Links for selected language
+  function detectTmbLang(title: string): string {
+    if (/hindi/i.test(title)) return 'Hindi';
+    if (/telugu/i.test(title)) return 'Telugu';
+    if (/tamil/i.test(title)) return 'Tamil';
+    if (/malay/i.test(title)) return 'Malayalam';
+    return 'Original';
+  }
+
+  // All available language names (from linkSummary + TMB dubs)
+  const allLangs = detail ? [
+    ...detail.availableLanguages,
+    ...Object.keys(tmbLangMap).filter(l => !detail.availableLanguages.includes(l))
+  ] : [];
+
+  // Available qualities for selected lang: TMB stream qualities (if available) else linkSummary
+  const tmbQuals = (tmbStreams[selectedLang] || []).map(s => s.quality).filter(Boolean);
   const linksForLang = detail?.links.filter(l => l.language === selectedLang) || [];
-  // Available qualities for this language
-  const availableQualities = detail?.linkSummary[selectedLang]?.qualities || [...new Set(linksForLang.map(l => l.quality))];
+  const availableQualities = tmbQuals.length > 0
+    ? [...new Set(tmbQuals)]
+    : detail?.linkSummary[selectedLang]?.qualities || [...new Set(linksForLang.map(l => l.quality))];
 
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://cinemahub-api.vercel.app';
 
-  // Domains that are bypass/redirect pages, NOT direct video URLs
   const BYPASS_DOMAINS = ['hakunaymatata.com','cloud.unblockedgames.world','hubcloud','hubdrive','gdflix','streamtape','workupload'];
   const isBypassDomain = (url: string) => BYPASS_DOMAINS.some(d => url.includes(d));
 
@@ -93,7 +143,6 @@ export default function DetailPage() {
     if (!detail) return null;
     const candidates = detail.links.filter(l => l.language === lang && l.quality === quality);
     const pool = candidates.length > 0 ? candidates : detail.links.filter(l => l.language === lang);
-    // Prefer m3u8 (direct stream) > non-bypass mp4 > bypass
     return pool.find(l => l.format === 'm3u8')
       || pool.find(l => l.format === 'mp4' && !isBypassDomain(l.url))
       || pool.find(l => !isBypassDomain(l.url))
@@ -106,43 +155,75 @@ export default function DetailPage() {
     return `${API_BASE}/api/proxy?url=${encodeURIComponent(url)}&req_referer=${encodeURIComponent('https://themoviebox.org/')}`;
   }
 
+  async function fetchTmbStreams(lang: string, detailUrl: string): Promise<TmbStream[]> {
+    if (tmbStreams[lang]) return tmbStreams[lang]; // cached
+    const res = await fetch(`/api/tmb-play?url=${encodeURIComponent(detailUrl)}`);
+    const data = await res.json();
+    if (data.success && data.streams?.length > 0) {
+      const streams: TmbStream[] = data.streams;
+      setTmbStreams(prev => ({ ...prev, [lang]: streams }));
+      return streams;
+    }
+    return [];
+  }
+
   async function resolveAndPlay(lang?: string, quality?: string) {
     const useLang = lang || selectedLang;
     const useQuality = quality || selectedQuality;
-    const link = getBestLink(useLang, useQuality);
 
     setPlayerError('');
     setBypassUrl('');
     setShowPlayer(true);
+    setActiveLink(null);
 
+    // ── TMB-FIRST: if this language has a TMB dub, use fresh IP-signed streams ──
+    const tmbDetailUrl = tmbLangMap[useLang];
+    if (tmbDetailUrl) {
+      setResolving(true);
+      try {
+        const streams = await fetchTmbStreams(useLang, tmbDetailUrl);
+        if (streams.length > 0) {
+          // Pick best quality match
+          const best = streams.find(s => s.quality === useQuality)
+            || streams.find(s => s.quality === '1080p')
+            || streams[0];
+          // Update quality list for this language
+          const quals = [...new Set(streams.map(s => s.quality))];
+          if (!quals.includes(useQuality)) setSelectedQuality(quals[0]);
+          const resolvedLink: StreamLink = {
+            url: best.url, quality: best.quality, language: useLang,
+            format: best.format, provider: 'themovie'
+          };
+          setActiveLink(resolvedLink);
+          return;
+        }
+      } catch { /* fall through to other providers */ }
+      finally { setResolving(false); }
+    }
+
+    // ── FALLBACK: other providers (bypass resolution) ──
+    const link = getBestLink(useLang, useQuality);
     if (!link) {
       setPlayerError('No stream available. Try another language or quality.');
       return;
     }
 
-    // If it's a bypass domain, try to resolve it via the extractor
     if (isBypassDomain(link.url) || link.format === 'bypass') {
       setResolving(true);
-      setActiveLink(null);
       try {
         const res = await fetch(`${API_BASE}/api/extractors/hubcloud?url=${encodeURIComponent(link.url)}`);
         const data = await res.json();
         if (data.success && data.links?.length > 0) {
-          // Pick a direct video link (prefer .mkv or .mp4)
           const best = data.links.find((l: any) => /\.(mkv|mp4)/i.test(l.link)) || data.links[0];
-          const resolvedLink: StreamLink = { url: best.link, quality: link.quality, language: link.language, format: 'mp4', provider: link.provider };
-          setActiveLink(resolvedLink);
+          setActiveLink({ url: best.link, quality: link.quality, language: useLang, format: 'mp4', provider: link.provider });
         } else {
-          // Can't resolve — show external link fallback
           setBypassUrl(link.url);
-          setPlayerError('Could not auto-resolve this stream. Open externally:');
+          setPlayerError('Stream needs external player:');
         }
       } catch {
         setBypassUrl(link.url);
-        setPlayerError('Could not auto-resolve this stream. Open externally:');
-      } finally {
-        setResolving(false);
-      }
+        setPlayerError('Could not resolve stream. Open externally:');
+      } finally { setResolving(false); }
       return;
     }
 
@@ -234,14 +315,26 @@ export default function DetailPage() {
             </div>
 
             <div className="flex items-center gap-2 mt-3 flex-wrap">
-              {detail.availableLanguages.map(lang => (
-                <button key={lang}
-                  onClick={() => { setSelectedLang(lang); const q = detail.linkSummary[lang]?.qualities[0] || selectedQuality; setSelectedQuality(q); resolveAndPlay(lang, q); }}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                  style={{ background: selectedLang === lang ? 'var(--accent)' : 'rgba(255,255,255,0.1)', color: 'white' }}>
-                  {lang}
-                </button>
-              ))}
+              {allLangs.map(lang => {
+                const isTmb = lang in tmbLangMap;
+                const isActive = selectedLang === lang;
+                return (
+                  <button key={lang}
+                    onClick={() => {
+                      setSelectedLang(lang);
+                      const q = isTmb
+                        ? (tmbStreams[lang]?.[0]?.quality || '1080p')
+                        : (detail.linkSummary[lang]?.qualities[0] || selectedQuality);
+                      setSelectedQuality(q);
+                      resolveAndPlay(lang, q);
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                    style={{ background: isActive ? 'var(--accent)' : 'rgba(255,255,255,0.1)', color: 'white' }}>
+                    {isTmb && <span title="Direct from TheMovieBox" style={{ fontSize: '10px' }}>⚡</span>}
+                    {lang}
+                  </button>
+                );
+              })}
               <span className="text-white/20">|</span>
               {availableQualities.map(q => (
                 <button key={q}
